@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { MENU, formatRs } from "@/lib/menu";
-import type { Order } from "@/lib/supabase";
+import { getSupabase, type Order } from "@/lib/supabase";
 import { useOrders } from "@/lib/useOrders";
 
 function summarizeItems(order: Order): string {
@@ -25,7 +26,32 @@ function formatTime(iso: string): string {
 }
 
 export default function OrdersPage() {
-  const { orders, loading, error } = useOrders({ unservedOnly: false });
+  const { orders, setOrders, loading, error, reload } = useOrders({ unservedOnly: false });
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+
+  async function deleteOrder(order: Order) {
+    if (!confirm(`Delete order #${order.id} for ${order.customer_name}? This cannot be undone.`)) {
+      return;
+    }
+    setBusyId(order.id);
+    setActionError(null);
+    const { data, error } = await getSupabase()
+      .from("orders")
+      .delete()
+      .eq("id", order.id)
+      .select("id");
+    if (error) {
+      setActionError(error.message);
+    } else if (!data || data.length === 0) {
+      // Supabase returns no error when row-level security blocks a delete.
+      setActionError("Order was not deleted. Check that the delete policy exists in Supabase.");
+    } else {
+      setOrders((prev) => prev.filter((o) => o.id !== order.id));
+    }
+    setBusyId(null);
+    reload();
+  }
 
   const totals = orders.reduce(
     (acc, o) => {
@@ -40,7 +66,9 @@ export default function OrdersPage() {
   return (
     <>
       <h1 className="page-title">Orders</h1>
-      {error && <div className="error" style={{ marginBottom: 16 }}>{error}</div>}
+      {(error || actionError) && (
+        <div className="error" style={{ marginBottom: 16 }}>{actionError ?? error}</div>
+      )}
 
       <div className="card table-wrap">
         <table>
@@ -53,16 +81,17 @@ export default function OrdersPage() {
               <th>Payment</th>
               <th>Status</th>
               <th className="num">Amount</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr className="empty-row">
-                <td colSpan={7}>Loading…</td>
+                <td colSpan={8}>Loading…</td>
               </tr>
             ) : orders.length === 0 ? (
               <tr className="empty-row">
-                <td colSpan={7}>No orders yet</td>
+                <td colSpan={8}>No orders yet</td>
               </tr>
             ) : (
               orders.map((o) => (
@@ -85,6 +114,15 @@ export default function OrdersPage() {
                   </td>
                   <td className="num">
                     <strong>{formatRs(Number(o.total))}</strong>
+                  </td>
+                  <td className="num">
+                    <button
+                      className="btn btn-sm btn-danger"
+                      onClick={() => deleteOrder(o)}
+                      disabled={busyId === o.id}
+                    >
+                      {busyId === o.id ? "…" : "Delete"}
+                    </button>
                   </td>
                 </tr>
               ))

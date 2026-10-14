@@ -17,12 +17,13 @@ create index if not exists orders_unserved_idx
   on public.orders (created_at) where served = false;
 
 -- The app talks to Supabase with the publishable (anon) key, so allow the
--- anon role to read, create and mark orders as served. No deletes.
+-- anon role to read, create, mark as served and delete orders.
 alter table public.orders enable row level security;
 
 drop policy if exists "orders_select" on public.orders;
 drop policy if exists "orders_insert" on public.orders;
 drop policy if exists "orders_update" on public.orders;
+drop policy if exists "orders_delete" on public.orders;
 
 create policy "orders_select" on public.orders
   for select to anon, authenticated using (true);
@@ -30,6 +31,8 @@ create policy "orders_insert" on public.orders
   for insert to anon, authenticated with check (true);
 create policy "orders_update" on public.orders
   for update to anon, authenticated using (true) with check (true);
+create policy "orders_delete" on public.orders
+  for delete to anon, authenticated using (true);
 
 -- Enable realtime so the serving page updates instantly.
 do $$
